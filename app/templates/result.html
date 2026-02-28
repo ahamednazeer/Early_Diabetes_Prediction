@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Result | XAI Diabetes Risk{% endblock %}
+
+{% block content %}
+<section class="result-layout">
+  <article class="card result-card">
+    <p class="eyebrow">Prediction Output</p>
+    <h1>{{ prediction.risk_label }}</h1>
+    <div class="metric">
+      <span>Risk Probability</span>
+      <strong>{{ (prediction.risk_score * 100) | round(2) }}%</strong>
+    </div>
+    <div class="progress">
+      <div class="progress-bar" style="width: {{ (prediction.risk_score * 100) | round(2) }}%"></div>
+    </div>
+  </article>
+
+  <article class="card">
+    <p class="eyebrow">Explainable AI (SHAP)</p>
+    {% if explanation.available %}
+    <ul class="list">
+      {% for item in explanation.top_features %}
+      <li>
+        <span>{{ item.feature.replace("_", " ").title() }}</span>
+        <strong>{{ item.impact }}</strong>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>{{ explanation.message }}</p>
+    {% endif %}
+  </article>
+
+  <article class="card">
+    <p class="eyebrow">Recommendations</p>
+    <ul class="list bullets">
+      {% for item in recommendations %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
+
+<section class="actions">
+  <a class="btn btn-primary" href="{{ url_for('main.index') }}">New Assessment</a>
+  <a class="btn btn-ghost" href="{{ url_for('main.history') }}">Open History</a>
+</section>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}History | XAI Diabetes Risk{% endblock %}
+
+{% block content %}
+<section class="hero compact">
+  <div>
+    <p class="eyebrow">Audit Trail</p>
+    <h1>Prediction History</h1>
+    <p class="subtitle">Latest 25 assessments for your account.</p>
+  </div>
+</section>
+
+<section class="card table-card">
+  {% if records %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Risk</th>
+          <th>Probability</th>
+          <th>HbA1c</th>
+          <th>Glucose</th>
+          <th>BMI</th>
+          <th>Smoking</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in records %}
+        <tr>
+          <td>{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ record.risk_label }}</td>
+          <td>{{ (record.risk_score * 100) | round(2) }}%</td>
+          <td>{{ record.input_payload.hba1c }}</td>
+          <td>{{ record.input_payload.glucose_level }}</td>
+          <td>{{ record.input_payload.bmi }}</td>
+          <td>{{ record.input_payload.smoking_status }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>No predictions recorded yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

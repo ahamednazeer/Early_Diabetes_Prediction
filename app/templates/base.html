@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Early Diabetes Prediction{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+  </head>
+  <body>
+    <div class="app-bg"></div>
+    <header class="topbar">
+      <div class="container topbar-content">
+        <a href="{{ url_for('main.index') }}" class="brand">XAI Diabetes Risk</a>
+        {% if current_user.is_authenticated %}
+        <nav class="nav">
+          <a href="{{ url_for('main.index') }}">Assessment</a>
+          <a href="{{ url_for('main.history') }}">History</a>
+          <form action="{{ url_for('main.logout') }}" method="post">
+            <button type="submit" class="btn btn-ghost">Logout</button>
+          </form>
+        </nav>
+        {% endif %}
+      </div>
+    </header>
+
+    <main class="container page-shell">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <section class="alerts">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      </section>
+      {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </main>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+  </body>
+</html>
