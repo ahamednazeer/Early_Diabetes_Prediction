@@ -78,13 +78,18 @@ Outputs:
 ## Train Model
 Default (downloaded modern dataset):
 ```bash
-python3 scripts/train_model.py --data data/diabetes_prediction_dataset.csv
+python3 scripts/train_model.py --data data/diabetes_prediction_dataset.csv --optimize-for recall
 ```
 
 Use your own CSV:
 ```bash
 python3 scripts/train_model.py --data data/your_dataset.csv
 ```
+
+`--optimize-for` options:
+- `f1` (default)
+- `recall` (recommended for screening use-cases)
+- `balanced` (precision/recall trade-off)
 
 ## Evaluate Model
 ```bash

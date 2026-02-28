@@ -43,18 +43,32 @@ def parse_args() -> argparse.Namespace:
         default="models/evaluation_report.json",
         help="Path for evaluation JSON report.",
     )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Override prediction threshold. Defaults to value from models/feature_metadata.json.",
+    )
     return parser.parse_args()
 
 
 def evaluate(y_true: np.ndarray, proba: np.ndarray, threshold: float = 0.5) -> dict:
     predictions = (proba >= threshold).astype(int)
+    precision = float(precision_score(y_true, predictions, zero_division=0))
+    recall = float(recall_score(y_true, predictions, zero_division=0))
+    f1 = float(f1_score(y_true, predictions, zero_division=0))
+    tn, fp, fn, tp = confusion_matrix(y_true, predictions).ravel()
+    specificity = float(tn / (tn + fp)) if (tn + fp) else 0.0
+
     return {
+        "threshold": round(float(threshold), 4),
         "accuracy": round(float(accuracy_score(y_true, predictions)), 4),
-        "precision": round(float(precision_score(y_true, predictions, zero_division=0)), 4),
-        "recall": round(float(recall_score(y_true, predictions, zero_division=0)), 4),
-        "f1_score": round(float(f1_score(y_true, predictions, zero_division=0)), 4),
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1_score": round(f1, 4),
+        "specificity": round(specificity, 4),
         "roc_auc": round(float(roc_auc_score(y_true, proba)), 4),
-        "confusion_matrix": confusion_matrix(y_true, predictions).tolist(),
+        "confusion_matrix": [[int(tn), int(fp)], [int(fn), int(tp)]],
     }
 
 
@@ -71,6 +85,12 @@ def main() -> None:
     preprocessor = joblib.load(model_dir / "preprocessor.joblib")
     model = load_model(model_dir / "diabetes_model.keras")
 
+    metadata_path = model_dir / "feature_metadata.json"
+    metadata = {}
+    if metadata_path.exists():
+        with metadata_path.open("r", encoding="utf-8") as handle:
+            metadata = json.load(handle)
+
     raw_df = pd.read_csv(data_path)
     data = sanitize_training_dataframe(raw_df)
     X = data[ALL_FEATURES]
@@ -81,7 +101,10 @@ def main() -> None:
         transformed = transformed.toarray()
     proba = model.predict(transformed, verbose=0).reshape(-1)
 
-    results = evaluate(y, proba, threshold=0.5)
+    threshold = float(args.threshold) if args.threshold is not None else float(
+        metadata.get("threshold", 0.5)
+    )
+    results = evaluate(y, proba, threshold=threshold)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
