@@ -1,0 +1,37 @@
+# .dockerignore
+.git
+.github
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv
+ENV/
+env.bak/
+venv.bak/
+
+# Logs
+logs
+*.log
+
+# Jupyter Notebooks
+*.ipynb
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
+
+# GitHub Actions
+.github/
+
+# Ignore README and scripts if not needed during runtime
+docs/
+scripts/
+
+# Ignore local run configurations
+instance/

@@ -1,18 +1,9 @@
 from __future__ import annotations
 
-from flask import (
-    Blueprint,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
-from flask_login import current_user, login_required, login_user, logout_user
+from datetime import datetime
 
-from .extensions import db
-from .models import PredictionRecord, User
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+
 from .services.explanation_service import get_explanation_service
 from .services.model_service import get_prediction_service
 from .services.preprocessing import ALL_FEATURES, coerce_prediction_payload
@@ -22,6 +13,10 @@ from .services.recommendation_service import RecommendationService
 main_bp = Blueprint("main", __name__)
 recommendation_service = RecommendationService()
 
+# In-memory history only (no DB persistence).
+RECENT_PREDICTIONS: list[dict] = []
+MAX_RECENT = 25
+
 
 def _payload_from_request() -> dict:
     if request.is_json:
@@ -29,6 +24,20 @@ def _payload_from_request() -> dict:
     else:
         payload = request.form.to_dict()
     return coerce_prediction_payload(payload)
+
+
+def _store_recent(payload: dict, result: dict) -> None:
+    RECENT_PREDICTIONS.insert(
+        0,
+        {
+            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "risk_label": result["prediction"]["risk_label"],
+            "risk_score": result["prediction"]["risk_score"],
+            "input_payload": payload,
+        },
+    )
+    if len(RECENT_PREDICTIONS) > MAX_RECENT:
+        del RECENT_PREDICTIONS[MAX_RECENT:]
 
 
 def _run_prediction(payload: dict) -> dict:
@@ -42,59 +51,21 @@ def _run_prediction(payload: dict) -> dict:
         risk_label=prediction_result.risk_label,
     )
 
-    record = PredictionRecord(
-        user_id=current_user.id,
-        risk_score=prediction_result.risk_score,
-        risk_label=prediction_result.risk_label,
-        input_payload=payload,
-        explanation=explanation,
-        recommendations=recommendations,
-    )
-    db.session.add(record)
-    db.session.commit()
-
-    return {
+    result = {
         "prediction": prediction_result.to_dict(),
         "explanation": explanation,
         "recommendations": recommendations,
-        "record_id": record.id,
     }
-
-
-@main_bp.route("/login", methods=["GET", "POST"])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for("main.index"))
-
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-
-        user = User.query.filter_by(username=username).first()
-        if user and user.check_password(password):
-            login_user(user)
-            return redirect(url_for("main.index"))
-
-        flash("Invalid username or password.", "danger")
-
-    return render_template("login.html")
-
-
-@main_bp.route("/logout", methods=["POST"])
-@login_required
-def logout():
-    logout_user()
-    return redirect(url_for("main.login"))
+    _store_recent(payload, result)
+    return result
 
 
 @main_bp.route("/", methods=["GET"])
-@login_required
 def index():
     return render_template("index.html", features=ALL_FEATURES)
 
 
 @main_bp.route("/predict", methods=["POST"])
-@login_required
 def predict():
     payload = _payload_from_request()
     try:
@@ -119,19 +90,11 @@ def predict():
 
 
 @main_bp.route("/history", methods=["GET"])
-@login_required
 def history():
-    records = (
-        PredictionRecord.query.filter_by(user_id=current_user.id)
-        .order_by(PredictionRecord.created_at.desc())
-        .limit(25)
-        .all()
-    )
-    return render_template("history.html", records=records)
+    return render_template("history.html", records=RECENT_PREDICTIONS)
 
 
 @main_bp.route("/api/predict", methods=["POST"])
-@login_required
 def api_predict():
     payload = _payload_from_request()
     try:
@@ -144,12 +107,5 @@ def api_predict():
 
 
 @main_bp.route("/api/history", methods=["GET"])
-@login_required
 def api_history():
-    records = (
-        PredictionRecord.query.filter_by(user_id=current_user.id)
-        .order_by(PredictionRecord.created_at.desc())
-        .limit(50)
-        .all()
-    )
-    return jsonify([record.to_dict() for record in records])
+    return jsonify(RECENT_PREDICTIONS)

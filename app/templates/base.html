@@ -17,15 +17,10 @@
     <header class="topbar">
       <div class="container topbar-content">
         <a href="{{ url_for('main.index') }}" class="brand">XAI Diabetes Risk</a>
-        {% if current_user.is_authenticated %}
         <nav class="nav">
           <a href="{{ url_for('main.index') }}">Assessment</a>
           <a href="{{ url_for('main.history') }}">History</a>
-          <form action="{{ url_for('main.logout') }}" method="post">
-            <button type="submit" class="btn btn-ghost">Logout</button>
-          </form>
         </nav>
-        {% endif %}
       </div>
     </header>
 

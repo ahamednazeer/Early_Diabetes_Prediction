@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,10 +13,8 @@ from flask import current_app
 
 from .preprocessing import ALL_FEATURES, payload_to_frame
 
-try:
-    from tensorflow.keras.models import load_model
-except Exception:  # pragma: no cover
-    load_model = None
+
+_predict_executor = ThreadPoolExecutor(max_workers=1)
 
 
 def _to_dense(matrix: Any) -> np.ndarray:
@@ -24,15 +23,27 @@ def _to_dense(matrix: Any) -> np.ndarray:
     return np.asarray(matrix)
 
 
+def _lazy_load_keras_model(model_path: Path):
+    try:
+        from tensorflow.keras.models import load_model
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError(
+            "TensorFlow is not installed. Install dependencies from requirements.txt."
+        ) from exc
+    return load_model(model_path)
+
+
 @dataclass
 class PredictionResult:
     risk_score: float
     risk_label: str
+    backend: str
 
     def to_dict(self) -> dict:
         return {
             "risk_score": round(self.risk_score, 4),
             "risk_label": self.risk_label,
+            "backend": self.backend,
         }
 
 
@@ -52,11 +63,6 @@ class DiabetesPredictionService:
         if self._loaded:
             return
 
-        if load_model is None:
-            raise RuntimeError(
-                "TensorFlow is not installed. Install dependencies from requirements.txt."
-            )
-
         preprocessor_path = Path(current_app.config["PREPROCESSOR_PATH"])
         model_path = Path(current_app.config["MODEL_PATH"])
         metadata_path = Path(current_app.config["METADATA_PATH"])
@@ -67,7 +73,7 @@ class DiabetesPredictionService:
             )
 
         self.preprocessor = joblib.load(preprocessor_path)
-        self.model = load_model(model_path)
+        self.model = _lazy_load_keras_model(model_path)
 
         if metadata_path.exists():
             with metadata_path.open("r", encoding="utf-8") as handle:
@@ -77,6 +83,36 @@ class DiabetesPredictionService:
             self.metadata = {}
 
         self._loaded = True
+
+    @staticmethod
+    def _heuristic_probability(payload: dict) -> float:
+        def safe_float(key: str, default: float = 0.0) -> float:
+            try:
+                value = payload.get(key, default)
+                return float(value) if value is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        age = safe_float("age")
+        bmi = safe_float("bmi")
+        glucose = safe_float("glucose_level")
+        hba1c = safe_float("hba1c")
+        hypertension = safe_float("hypertension")
+        heart_disease = safe_float("heart_disease")
+        smoking = str(payload.get("smoking_status", "")).lower()
+
+        score = (
+            -7.4
+            + 0.02 * age
+            + 0.09 * max(0.0, bmi - 22)
+            + 0.03 * max(0.0, glucose - 95)
+            + 0.75 * max(0.0, hba1c - 5.5)
+            + 0.45 * hypertension
+            + 0.55 * heart_disease
+            + (0.22 if smoking in {"current", "ever"} else 0.08 if smoking in {"former", "not current"} else 0.0)
+        )
+        probability = 1.0 / (1.0 + np.exp(-score))
+        return float(np.clip(probability, 0.01, 0.99))
 
     def _transform_payload(self, payload: dict) -> np.ndarray:
         frame = payload_to_frame(payload)
@@ -93,12 +129,35 @@ class DiabetesPredictionService:
         transformed_dense = _to_dense(transformed)
         return self.predict_proba_preprocessed(transformed_dense)
 
-    def predict_from_payload(self, payload: dict) -> PredictionResult:
+    def _predict_with_model_timeout(self, payload: dict) -> float:
         self.load()
         transformed = self._transform_payload(payload)
-        probability = float(self.predict_proba_preprocessed(transformed)[0])
-        label = "High Risk" if probability >= self.threshold else "Low Risk"
-        return PredictionResult(risk_score=probability, risk_label=label)
+        timeout_seconds = float(current_app.config.get("MODEL_PREDICT_TIMEOUT_SEC", 2.0))
+        future = _predict_executor.submit(self.predict_proba_preprocessed, transformed)
+        return float(future.result(timeout=timeout_seconds)[0])
+
+    def predict_from_payload(self, payload: dict) -> PredictionResult:
+        engine = str(current_app.config.get("PREDICTION_ENGINE", "heuristic")).lower()
+
+        if engine == "heuristic":
+            probability = self._heuristic_probability(payload)
+            label = "High Risk" if probability >= 0.5 else "Low Risk"
+            return PredictionResult(risk_score=probability, risk_label=label, backend="heuristic")
+
+        if engine == "model":
+            probability = self._predict_with_model_timeout(payload)
+            label = "High Risk" if probability >= self.threshold else "Low Risk"
+            return PredictionResult(risk_score=probability, risk_label=label, backend="model")
+
+        # auto mode: try model first and fallback if timeout/error.
+        try:
+            probability = self._predict_with_model_timeout(payload)
+            label = "High Risk" if probability >= self.threshold else "Low Risk"
+            return PredictionResult(risk_score=probability, risk_label=label, backend="model")
+        except (TimeoutError, Exception):
+            probability = self._heuristic_probability(payload)
+            label = "High Risk" if probability >= 0.5 else "Low Risk"
+            return PredictionResult(risk_score=probability, risk_label=label, backend="heuristic")
 
     def transform_payload(self, payload: dict) -> np.ndarray:
         self.load()

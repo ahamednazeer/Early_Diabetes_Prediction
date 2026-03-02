@@ -28,7 +28,7 @@
       <tbody>
         {% for record in records %}
         <tr>
-          <td>{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ record.created_at }}</td>
           <td>{{ record.risk_label }}</td>
           <td>{{ (record.risk_score * 100) | round(2) }}%</td>
           <td>{{ record.input_payload.hba1c }}</td>
