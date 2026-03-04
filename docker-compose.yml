@@ -1,0 +1,13 @@
+services:
+  app:
+    image: ahamednazeer/early-diabetes-prediction:latest
+    container_name: early-diabetes-prediction
+    ports:
+      - "8080:8080"
+    environment:
+      - FLASK_APP=run.py
+      - FLASK_RUN_HOST=0.0.0.0
+      - PORT=8080
+      - PYTHONUNBUFFERED=1
+      - FLASK_DEBUG=0
+    restart: unless-stopped
